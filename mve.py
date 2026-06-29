@@ -239,13 +239,14 @@ class MVEAutomationClient:
         edit.type_keys(value, with_spaces=True, set_foreground=True)
 
     def _find_edit_for_label(self, window: Any, label: str) -> Any | None:
+        expected_label = self._normalize_label_text(label)
         labels = []
         for control in window.descendants():
             try:
                 if not control.is_visible():
                     continue
-                text = (control.window_text() or "").strip().casefold()
-                if text == label.casefold():
+                text = self._normalize_label_text(control.window_text() or "")
+                if text == expected_label:
                     labels.append(control)
             except Exception:
                 continue
@@ -275,6 +276,10 @@ class MVEAutomationClient:
                     best_score = score
                     best_match = edit
         return best_match
+
+    @staticmethod
+    def _normalize_label_text(value: str) -> str:
+        return " ".join(value.strip().rstrip(":").split()).casefold()
 
     def _click_button(self, window: Any, title: str) -> None:
         for control_type in ("Button", "SplitButton"):
