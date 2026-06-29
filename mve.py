@@ -37,7 +37,8 @@ class MVEAutomationClient:
         try:
             application.connect(title_re=self.settings.app_title_re)
             self._app = application
-            self._bring_main_window_to_front()
+            window = self._wait_for_any_mve_window(timeout=5)
+            self._bring_window_to_front(window)
             return
         except Exception:
             pass
@@ -49,15 +50,16 @@ class MVEAutomationClient:
 
         try:
             self._app = application.start(self.settings.app_path)
-            self._wait_for_any_mve_window(timeout=20)
+            window = self._wait_for_any_mve_window(timeout=20)
+            self._bring_window_to_front(window)
         except Exception as exc:
             raise MVEFatalError(f"Unable to open MVE: {exc}") from exc
 
     def login_if_needed(self) -> None:
         login_window = self._find_window(
-            title_re=r".*(Login|My Vision Express).*", timeout=3, raise_on_missing=False
+            title_re=self.settings.app_title_re, timeout=3, raise_on_missing=False
         )
-        if login_window is None or self._is_main_window(login_window):
+        if login_window is None or not self._looks_like_login_window(login_window):
             return
 
         if not self.settings.mve_username or not self.settings.mve_password:
@@ -185,22 +187,27 @@ class MVEAutomationClient:
         raise MVEFatalError("Timed out waiting for an MVE window to appear.")
 
     def _wait_for_main_window(self, timeout: float) -> Any:
-        window = self._find_window(
-            title_re=self.settings.app_title_re, timeout=timeout, raise_on_missing=False
-        )
-        if window is None:
-            raise MVEFatalError("Timed out waiting for the MVE main window.")
-        self._bring_window_to_front(window)
-        return window
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            window = self._find_window(
+                title_re=self.settings.app_title_re, timeout=1, raise_on_missing=False
+            )
+            if window is None:
+                continue
+            if self._looks_like_login_window(window):
+                time.sleep(0.5)
+                continue
+            self._bring_window_to_front(window)
+            return window
+        raise MVEFatalError("Timed out waiting for the MVE main window.")
 
     def _bring_main_window_to_front(self) -> None:
         window = self._wait_for_main_window(timeout=10)
         self._bring_window_to_front(window)
 
-    @staticmethod
-    def _is_main_window(window: Any) -> bool:
-        title = (window.window_text() or "").casefold()
-        return "search patient" not in title and "daily closing" not in title
+    def _looks_like_login_window(self, window: Any) -> bool:
+        visible_text = "\n".join(text.casefold() for text in self._collect_visible_text(window))
+        return all(marker in visible_text for marker in ("user id", "password", "login"))
 
     def _find_window(
         self,
