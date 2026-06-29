@@ -23,7 +23,7 @@ class GoogleSheetRepository:
     def load_pending_rows(self, limit: int) -> list[PendingPatientRow]:
         all_rows = self._worksheet.get_all_values()
         header_row_number, header_map = self._find_header_row(all_rows)
-        data_rows = all_rows[header_row_number:]
+        data_rows = self._extract_table_rows(all_rows[header_row_number:], header_map)
 
         pending: list[PendingPatientRow] = []
         status_key = self._resolve_status_header(header_map)
@@ -99,6 +99,26 @@ class GoogleSheetRepository:
             if column_name in header_map:
                 return column_name
         raise ValueError("Worksheet is missing both supported MVE status columns.")
+
+    def _extract_table_rows(
+        self, rows: list[list[str]], header_map: dict[str, int]
+    ) -> list[list[str]]:
+        table_rows: list[list[str]] = []
+        tracked_columns = sorted(set(header_map.values()))
+
+        for row in rows:
+            if self._is_empty_table_row(row, tracked_columns):
+                break
+            table_rows.append(row)
+
+        return table_rows
+
+    @staticmethod
+    def _is_empty_table_row(row_values: list[str], tracked_columns: list[int]) -> bool:
+        for column_index in tracked_columns:
+            if column_index - 1 < len(row_values) and row_values[column_index - 1].strip():
+                return False
+        return True
 
     @staticmethod
     def _normalize_header(value: str) -> str:
