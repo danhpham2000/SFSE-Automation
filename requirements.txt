@@ -1,0 +1,6 @@
+gspread>=6.1.2
+google-auth>=2.35.0
+python-dotenv>=1.0.1
+pywinauto>=0.6.8; sys_platform == "win32"
+pywin32>=306; sys_platform == "win32"
+comtypes>=1.4.6; sys_platform == "win32"
