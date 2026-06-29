@@ -275,12 +275,14 @@ class MVEAutomationClient:
         )
 
     def _dismiss_daily_closing_popup(self, popup: Any) -> bool:
+        popup_handle = self._window_handle(popup)
         self._bring_window_to_front(popup)
 
         for button_title in ("No", "&No", "NO"):
             try:
                 self._click_button(popup, button_title)
-                return True
+                if self._wait_for_popup_to_close(popup_handle):
+                    return True
             except Exception:
                 continue
 
@@ -288,15 +290,44 @@ class MVEAutomationClient:
             try:
                 self._keyboard(key_sequence)
                 time.sleep(0.3)
-                return True
+                if self._wait_for_popup_to_close(popup_handle):
+                    return True
             except Exception:
                 continue
 
         try:
             popup.type_keys("%n", set_foreground=True)
-            return True
+            return self._wait_for_popup_to_close(popup_handle)
         except Exception:
             return False
+
+    def _wait_for_popup_to_close(self, popup_handle: int | None, timeout: float = 2) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if popup_handle is None:
+                popup = self._find_daily_closing_popup()
+                if popup is None:
+                    return True
+            elif not self._window_handle_exists(popup_handle):
+                return True
+            time.sleep(0.2)
+        return False
+
+    @staticmethod
+    def _window_handle(window: Any) -> int | None:
+        try:
+            return int(window.handle)
+        except Exception:
+            return None
+
+    def _window_handle_exists(self, handle: int) -> bool:
+        for window in self._candidate_popup_windows():
+            try:
+                if int(window.handle) == handle and window.is_visible():
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _find_window(
         self,
