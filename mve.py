@@ -77,24 +77,31 @@ class MVEAutomationClient:
 
         try:
             self._wait_for_main_window(timeout=20)
+            self.handle_daily_closing_popup(timeout=8)
+            self._wait_for_main_window(timeout=10)
         except Exception as exc:
             raise MVEFatalError("MVE login did not reach the main window.") from exc
 
-    def handle_daily_closing_popup(self) -> None:
-        popup = self._find_window(
-            title_re=r".*Daily Closing.*", timeout=2, raise_on_missing=False
-        )
-        if popup is None:
-            return
+    def handle_daily_closing_popup(self, timeout: float = 4) -> None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            popup = self._find_daily_closing_popup()
+            if popup is None:
+                time.sleep(0.25)
+                continue
 
-        LOGGER.info("Daily Closing popup detected. Clicking No.")
-        try:
-            self._click_button(popup, "No")
-            time.sleep(0.5)
-        except Exception as exc:
-            raise MVEFatalError("Daily Closing popup appeared but could not be dismissed.") from exc
+            LOGGER.info("Daily Closing popup detected. Clicking No.")
+            try:
+                self._click_button(popup, "No")
+                time.sleep(0.75)
+                return
+            except Exception as exc:
+                raise MVEFatalError(
+                    "Daily Closing popup appeared but could not be dismissed."
+                ) from exc
 
     def open_patient_search(self) -> Any:
+        self.handle_daily_closing_popup(timeout=2)
         main_window = self._wait_for_main_window(timeout=10)
         try:
             self._click_named_control(main_window, "Patients")
@@ -211,6 +218,29 @@ class MVEAutomationClient:
     def _looks_like_login_window(self, window: Any) -> bool:
         visible_text = "\n".join(text.casefold() for text in self._collect_visible_text(window))
         return all(marker in visible_text for marker in ("user id", "password", "login"))
+
+    def _find_daily_closing_popup(self) -> Any | None:
+        for window in self._desktop.windows():
+            try:
+                if not window.is_visible():
+                    continue
+                texts = [
+                    text.casefold() for text in self._collect_visible_text(window) if text.strip()
+                ]
+                if not texts:
+                    continue
+                joined = "\n".join(texts)
+                has_daily_closing = "daily closing" in joined
+                has_blocking_message = (
+                    "lock previous open order/payment dates" in joined
+                    or ("previous open order" in joined and "payment" in joined)
+                )
+                has_no_button = any(text == "no" for text in texts)
+                if (has_daily_closing or has_blocking_message) and has_no_button:
+                    return window
+            except Exception:
+                continue
+        return None
 
     def _find_window(
         self,
