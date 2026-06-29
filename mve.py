@@ -243,20 +243,14 @@ class MVEAutomationClient:
         password_edit = self._find_edit_for_label(window, "Password")
 
         if user_edit is None or password_edit is None:
-            login_edits = self._find_visible_edits(window)
-            if len(login_edits) < 2:
+            ordered_edits = self._ordered_login_edits(window)
+            if len(ordered_edits) < 4:
                 raise MVEFatalError(
-                    "Could not find two visible editable fields on the MVE login screen."
+                    "Could not find enough visible editable fields on the MVE login screen."
                 )
-            ordered_edits = sorted(
-                login_edits,
-                key=lambda control: (control.rectangle().top, control.rectangle().left),
-            )
-            user_edit = user_edit or ordered_edits[0]
-            password_edit = password_edit or ordered_edits[1]
-            LOGGER.info(
-                "Falling back to login field order for credential entry."
-            )
+            user_edit = user_edit or ordered_edits[2]
+            password_edit = password_edit or ordered_edits[3]
+            LOGGER.info("Falling back to login row order for credential entry.")
 
         self._set_edit_value(window, user_edit, user_id)
         self._set_edit_value(window, password_edit, password)
@@ -312,6 +306,12 @@ class MVEAutomationClient:
             for control in window.descendants(control_type="Edit")
             if self._is_visible(control)
         ]
+
+    def _ordered_login_edits(self, window: Any) -> list[Any]:
+        return sorted(
+            self._find_visible_edits(window),
+            key=lambda control: (control.rectangle().top, control.rectangle().left),
+        )
 
     def _click_button(self, window: Any, title: str) -> None:
         for control_type in ("Button", "SplitButton"):
