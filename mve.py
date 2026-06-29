@@ -226,7 +226,7 @@ class MVEAutomationClient:
                     if text.strip()
                 ]
                 if self._looks_like_daily_closing_texts(texts):
-                    return window
+                    return self._top_level_window(window)
             except Exception:
                 continue
         return None
@@ -275,8 +275,23 @@ class MVEAutomationClient:
         )
 
     def _dismiss_daily_closing_popup(self, popup: Any) -> bool:
+        popup = self._top_level_window(popup)
         popup_handle = self._window_handle(popup)
         self._bring_window_to_front(popup)
+
+        for control in self._find_popup_no_controls(popup):
+            try:
+                self._invoke_control(control)
+                if self._wait_for_popup_to_close(popup_handle):
+                    return True
+            except Exception:
+                pass
+            try:
+                control.wrapper_object().click_input()
+                if self._wait_for_popup_to_close(popup_handle):
+                    return True
+            except Exception:
+                continue
 
         for button_title in ("No", "&No", "NO"):
             try:
@@ -288,7 +303,8 @@ class MVEAutomationClient:
 
         for key_sequence in ("%n", "n", "{ENTER}", " "):
             try:
-                self._keyboard(key_sequence)
+                popup.wrapper_object().set_focus()
+                popup.wrapper_object().type_keys(key_sequence, set_foreground=True)
                 time.sleep(0.3)
                 if self._wait_for_popup_to_close(popup_handle):
                     return True
@@ -296,7 +312,7 @@ class MVEAutomationClient:
                 continue
 
         try:
-            popup.type_keys("%n", set_foreground=True)
+            self._keyboard("%n")
             return self._wait_for_popup_to_close(popup_handle)
         except Exception:
             return False
@@ -323,11 +339,33 @@ class MVEAutomationClient:
     def _window_handle_exists(self, handle: int) -> bool:
         for window in self._candidate_popup_windows():
             try:
-                if int(window.handle) == handle and window.is_visible():
+                top_window = self._top_level_window(window)
+                if int(top_window.handle) == handle and top_window.is_visible():
                     return True
             except Exception:
                 continue
         return False
+
+    def _find_popup_no_controls(self, popup: Any) -> list[Any]:
+        matches: list[Any] = []
+        for control in popup.descendants():
+            try:
+                if not self._is_visible(control):
+                    continue
+                text = self._normalize_label_text(control.window_text() or "")
+                if text not in {"no", "&no"} and "no" not in text:
+                    continue
+                matches.append(control)
+            except Exception:
+                continue
+        return matches
+
+    @staticmethod
+    def _top_level_window(window: Any) -> Any:
+        try:
+            return window.top_level_parent()
+        except Exception:
+            return window
 
     def _find_window(
         self,
