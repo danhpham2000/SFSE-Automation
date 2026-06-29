@@ -95,10 +95,19 @@ class MVEAutomationClient:
                 self._click_button(popup, "No")
                 time.sleep(0.75)
                 return
-            except Exception as exc:
-                raise MVEFatalError(
-                    "Daily Closing popup appeared but could not be dismissed."
-                ) from exc
+            except Exception:
+                LOGGER.info(
+                    "Direct No-button click failed. Falling back to Enter on the popup."
+                )
+                try:
+                    self._bring_window_to_front(popup)
+                    self._keyboard("{ENTER}")
+                    time.sleep(0.75)
+                    return
+                except Exception as exc:
+                    raise MVEFatalError(
+                        "Daily Closing popup appeared but could not be dismissed."
+                    ) from exc
 
     def open_patient_search(self) -> Any:
         self.handle_daily_closing_popup(timeout=2)
