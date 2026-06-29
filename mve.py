@@ -68,8 +68,11 @@ class MVEAutomationClient:
             )
 
         LOGGER.info("MVE login screen detected. Attempting automated sign-in.")
-        self._set_labeled_edit(login_window, "User ID", self.settings.mve_username)
-        self._set_labeled_edit(login_window, "Password", self.settings.mve_password)
+        self._set_login_credentials(
+            login_window,
+            user_id=self.settings.mve_username,
+            password=self.settings.mve_password,
+        )
         self._click_button(login_window, "Login")
 
         try:
@@ -233,6 +236,32 @@ class MVEAutomationClient:
         edit = self._find_edit_for_label(window, label)
         if edit is None:
             raise MVEFatalError(f"Could not find an editable field for label '{label}'.")
+        self._set_edit_value(window, edit, value)
+
+    def _set_login_credentials(self, window: Any, user_id: str, password: str) -> None:
+        user_edit = self._find_edit_for_label(window, "User ID")
+        password_edit = self._find_edit_for_label(window, "Password")
+
+        if user_edit is None or password_edit is None:
+            login_edits = self._find_visible_edits(window)
+            if len(login_edits) < 2:
+                raise MVEFatalError(
+                    "Could not find two visible editable fields on the MVE login screen."
+                )
+            ordered_edits = sorted(
+                login_edits,
+                key=lambda control: (control.rectangle().top, control.rectangle().left),
+            )
+            user_edit = user_edit or ordered_edits[0]
+            password_edit = password_edit or ordered_edits[1]
+            LOGGER.info(
+                "Falling back to login field order for credential entry."
+            )
+
+        self._set_edit_value(window, user_edit, user_id)
+        self._set_edit_value(window, password_edit, password)
+
+    def _set_edit_value(self, window: Any, edit: Any, value: str) -> None:
         self._bring_window_to_front(window)
         edit.set_focus()
         self._keyboard("^a{BACKSPACE}")
@@ -251,11 +280,7 @@ class MVEAutomationClient:
             except Exception:
                 continue
 
-        edits = [
-            control
-            for control in window.descendants(control_type="Edit")
-            if self._is_visible(control)
-        ]
+        edits = self._find_visible_edits(window)
         if not labels:
             return edits[0] if len(edits) == 1 else None
 
@@ -280,6 +305,13 @@ class MVEAutomationClient:
     @staticmethod
     def _normalize_label_text(value: str) -> str:
         return " ".join(value.strip().rstrip(":").split()).casefold()
+
+    def _find_visible_edits(self, window: Any) -> list[Any]:
+        return [
+            control
+            for control in window.descendants(control_type="Edit")
+            if self._is_visible(control)
+        ]
 
     def _click_button(self, window: Any, title: str) -> None:
         for control_type in ("Button", "SplitButton"):
