@@ -239,18 +239,29 @@ class MVEAutomationClient:
         self._set_edit_value(window, edit, value)
 
     def _set_login_credentials(self, window: Any, user_id: str, password: str) -> None:
-        user_edit = self._find_edit_for_label(window, "User ID")
-        password_edit = self._find_edit_for_label(window, "Password")
+        ordered_edits = self._ordered_login_edits(window)
+        user_index = self.settings.login_user_edit_index - 1
+        password_index = self.settings.login_password_edit_index - 1
 
-        if user_edit is None or password_edit is None:
-            ordered_edits = self._ordered_login_edits(window)
-            if len(ordered_edits) < 4:
+        if user_index < 0 or password_index < 0:
+            raise MVEFatalError("MVE login edit indexes must be 1-based positive integers.")
+
+        if len(ordered_edits) > max(user_index, password_index):
+            user_edit = ordered_edits[user_index]
+            password_edit = ordered_edits[password_index]
+            LOGGER.info(
+                "Using configured login edit indexes user=%s password=%s.",
+                self.settings.login_user_edit_index,
+                self.settings.login_password_edit_index,
+            )
+        else:
+            user_edit = self._find_edit_for_label(window, "User ID")
+            password_edit = self._find_edit_for_label(window, "Password")
+            if user_edit is None or password_edit is None:
                 raise MVEFatalError(
-                    "Could not find enough visible editable fields on the MVE login screen."
+                    "Could not find the configured login edit fields on the MVE login screen."
                 )
-            user_edit = user_edit or ordered_edits[2]
-            password_edit = password_edit or ordered_edits[3]
-            LOGGER.info("Falling back to login row order for credential entry.")
+            LOGGER.info("Falling back to label-based login field matching.")
 
         self._set_edit_value(window, user_edit, user_id)
         self._set_edit_value(window, password_edit, password)

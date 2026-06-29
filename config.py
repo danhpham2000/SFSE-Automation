@@ -15,6 +15,8 @@ DEFAULT_APP_TITLE_RE = r".*Vision.*Express.*"
 class Settings:
     mve_username: str | None
     mve_password: str | None
+    login_user_edit_index: int
+    login_password_edit_index: int
     sheet_id: str
     worksheet_name: str
     credentials_file: Path
@@ -31,6 +33,10 @@ class Settings:
         return cls(
             mve_username=os.getenv("MVE_USERNAME"),
             mve_password=os.getenv("MVE_PASSWORD"),
+            login_user_edit_index=int(os.getenv("MVE_LOGIN_USER_EDIT_INDEX", "3")),
+            login_password_edit_index=int(
+                os.getenv("MVE_LOGIN_PASSWORD_EDIT_INDEX", "4")
+            ),
             sheet_id=os.getenv("SHEET_ID", DEFAULT_SHEET_ID),
             worksheet_name=os.getenv("WORKSHEET_NAME", DEFAULT_WORKSHEET_NAME),
             credentials_file=Path(
