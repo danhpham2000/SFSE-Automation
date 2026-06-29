@@ -90,24 +90,13 @@ class MVEAutomationClient:
                 time.sleep(0.25)
                 continue
 
-            LOGGER.info("Daily Closing popup detected. Clicking No.")
-            try:
-                self._click_button(popup, "No")
+            LOGGER.info("Daily Closing popup detected. Attempting dismissal.")
+            if self._dismiss_daily_closing_popup(popup):
                 time.sleep(0.75)
                 return
-            except Exception:
-                LOGGER.info(
-                    "Direct No-button click failed. Falling back to Enter on the popup."
-                )
-                try:
-                    self._bring_window_to_front(popup)
-                    self._keyboard("{ENTER}")
-                    time.sleep(0.75)
-                    return
-                except Exception as exc:
-                    raise MVEFatalError(
-                        "Daily Closing popup appeared but could not be dismissed."
-                    ) from exc
+            raise MVEFatalError(
+                "Daily Closing popup appeared but could not be dismissed."
+            )
 
     def open_patient_search(self) -> Any:
         self.handle_daily_closing_popup(timeout=2)
@@ -229,27 +218,85 @@ class MVEAutomationClient:
         return all(marker in visible_text for marker in ("user id", "password", "login"))
 
     def _find_daily_closing_popup(self) -> Any | None:
-        for window in self._desktop.windows():
+        for window in self._candidate_popup_windows():
             try:
-                if not window.is_visible():
-                    continue
                 texts = [
-                    text.casefold() for text in self._collect_visible_text(window) if text.strip()
+                    self._normalize_label_text(text)
+                    for text in self._collect_visible_text(window)
+                    if text.strip()
                 ]
-                if not texts:
-                    continue
-                joined = "\n".join(texts)
-                has_daily_closing = "daily closing" in joined
-                has_blocking_message = (
-                    "lock previous open order/payment dates" in joined
-                    or ("previous open order" in joined and "payment" in joined)
-                )
-                has_no_button = any(text == "no" for text in texts)
-                if (has_daily_closing or has_blocking_message) and has_no_button:
+                if self._looks_like_daily_closing_texts(texts):
                     return window
             except Exception:
                 continue
         return None
+
+    def _candidate_popup_windows(self) -> list[Any]:
+        windows: list[Any] = []
+        try:
+            windows.extend(self._desktop.windows())
+        except Exception:
+            pass
+
+        try:
+            main_window = self._desktop.window(title_re=self.settings.app_title_re)
+            if main_window.exists():
+                windows.extend(main_window.descendants())
+        except Exception:
+            pass
+
+        deduped: list[Any] = []
+        seen: set[int] = set()
+        for window in windows:
+            try:
+                handle = int(window.handle)
+            except Exception:
+                handle = id(window)
+            if handle in seen:
+                continue
+            seen.add(handle)
+            deduped.append(window)
+        return deduped
+
+    def _looks_like_daily_closing_texts(self, texts: list[str]) -> bool:
+        if not texts:
+            return False
+
+        joined = "\n".join(texts)
+        has_no = "no" in texts
+        has_yes = "yes" in texts
+        has_daily_closing = "daily closing" in joined
+        has_lock_prompt = "lock previous open order/payment dates" in joined
+        has_order_prompt = "previous open order" in joined
+        has_payment_prompt = "payment dates" in joined or "payment date" in joined
+
+        return (has_daily_closing or has_lock_prompt or (has_order_prompt and has_payment_prompt)) and (
+            has_no or has_yes
+        )
+
+    def _dismiss_daily_closing_popup(self, popup: Any) -> bool:
+        self._bring_window_to_front(popup)
+
+        for button_title in ("No", "&No", "NO"):
+            try:
+                self._click_button(popup, button_title)
+                return True
+            except Exception:
+                continue
+
+        for key_sequence in ("%n", "n", "{ENTER}", " "):
+            try:
+                self._keyboard(key_sequence)
+                time.sleep(0.3)
+                return True
+            except Exception:
+                continue
+
+        try:
+            popup.type_keys("%n", set_foreground=True)
+            return True
+        except Exception:
+            return False
 
     def _find_window(
         self,
