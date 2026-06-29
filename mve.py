@@ -322,6 +322,13 @@ class MVEAutomationClient:
             except Exception:
                 continue
 
+        try:
+            if self._click_daily_closing_no_by_geometry(popup):
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
+                    return True
+        except Exception:
+            pass
+
         for key_sequence in ("%n", "n", "{ENTER}", " "):
             try:
                 popup_target.wrapper_object().set_focus()
@@ -436,6 +443,27 @@ class MVEAutomationClient:
             except Exception:
                 continue
         return matches
+
+    def _click_daily_closing_no_by_geometry(self, popup: Any) -> bool:
+        wrapper = popup.wrapper_object()
+        rect = wrapper.rectangle()
+        width = rect.right - rect.left
+        height = rect.bottom - rect.top
+        if width <= 0 or height <= 0:
+            return False
+
+        # Based on the observed embedded Daily Closing panel layout:
+        # the No button sits in the lower-right region of the panel.
+        x = rect.left + int(width * 0.57)
+        y = rect.top + int(height * 0.86)
+
+        LOGGER.info(
+            "Falling back to geometric click for Daily Closing No button at (%s, %s).",
+            x,
+            y,
+        )
+        wrapper.click_input(coords=(x - rect.left, y - rect.top))
+        return True
 
     def _log_popup_diagnostics(self, popup: Any) -> None:
         try:
