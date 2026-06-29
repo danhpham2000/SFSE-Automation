@@ -76,14 +76,24 @@ class MVEAutomationClient:
         self._click_button(login_window, "Login")
 
         try:
+            time.sleep(self.settings.post_login_wait_seconds)
             self._wait_for_main_window(timeout=20)
-            self.handle_daily_closing_popup(timeout=8)
+            self.handle_daily_closing_popup(
+                timeout=self.settings.daily_closing_timeout_seconds
+            )
             self._wait_for_main_window(timeout=10)
         except Exception as exc:
             raise MVEFatalError("MVE login did not reach the main window.") from exc
 
-    def handle_daily_closing_popup(self, timeout: float = 4) -> None:
-        deadline = time.time() + timeout
+    def handle_daily_closing_popup(self, timeout: float | None = None) -> None:
+        effective_timeout = (
+            self.settings.daily_closing_timeout_seconds if timeout is None else timeout
+        )
+        LOGGER.info(
+            "Waiting up to %s seconds for Daily Closing popup.",
+            effective_timeout,
+        )
+        deadline = time.time() + effective_timeout
         while time.time() < deadline:
             popup = self._find_daily_closing_popup()
             if popup is None:
@@ -99,7 +109,7 @@ class MVEAutomationClient:
             )
 
     def open_patient_search(self) -> Any:
-        self.handle_daily_closing_popup(timeout=2)
+        self.handle_daily_closing_popup(timeout=5)
         main_window = self._wait_for_main_window(timeout=10)
         try:
             self._click_named_control(main_window, "Patients")

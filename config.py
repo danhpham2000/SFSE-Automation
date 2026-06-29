@@ -17,6 +17,8 @@ class Settings:
     mve_password: str | None
     login_user_edit_index: int
     login_password_edit_index: int
+    post_login_wait_seconds: float
+    daily_closing_timeout_seconds: float
     sheet_id: str
     worksheet_name: str
     credentials_file: Path
@@ -36,6 +38,12 @@ class Settings:
             login_user_edit_index=int(os.getenv("MVE_LOGIN_USER_EDIT_INDEX", "3")),
             login_password_edit_index=int(
                 os.getenv("MVE_LOGIN_PASSWORD_EDIT_INDEX", "4")
+            ),
+            post_login_wait_seconds=float(
+                os.getenv("MVE_POST_LOGIN_WAIT_SECONDS", "5")
+            ),
+            daily_closing_timeout_seconds=float(
+                os.getenv("MVE_DAILY_CLOSING_TIMEOUT_SECONDS", "15")
             ),
             sheet_id=os.getenv("SHEET_ID", DEFAULT_SHEET_ID),
             worksheet_name=os.getenv("WORKSHEET_NAME", DEFAULT_WORKSHEET_NAME),
