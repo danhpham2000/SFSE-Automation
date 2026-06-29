@@ -26,6 +26,7 @@ class MVEAutomationClient:
         self.settings = settings
         self._app = None
         self._desktop = None
+        self._desktop_win32 = None
         self._keyboard = None
         self._load_windows_dependencies()
 
@@ -104,6 +105,10 @@ class MVEAutomationClient:
             if self._dismiss_daily_closing_popup(popup):
                 time.sleep(0.75)
                 return
+            if self._dismiss_daily_closing_popup_win32():
+                time.sleep(0.75)
+                return
+            self._log_popup_diagnostics(popup)
             raise MVEFatalError(
                 "Daily Closing popup appeared but could not be dismissed."
             )
@@ -192,6 +197,7 @@ class MVEAutomationClient:
 
         self._application_cls = Application
         self._desktop = Desktop(backend="uia")
+        self._desktop_win32 = Desktop(backend="win32")
         self._keyboard = send_keys
 
     def _wait_for_any_mve_window(self, timeout: float) -> Any:
@@ -236,7 +242,7 @@ class MVEAutomationClient:
                     if text.strip()
                 ]
                 if self._looks_like_daily_closing_texts(texts):
-                    return self._top_level_window(window)
+                    return window
             except Exception:
                 continue
         return None
@@ -252,6 +258,11 @@ class MVEAutomationClient:
             main_window = self._desktop.window(title_re=self.settings.app_title_re)
             if main_window.exists():
                 windows.extend(main_window.descendants())
+        except Exception:
+            pass
+
+        try:
+            windows.extend(self._desktop_win32.windows())
         except Exception:
             pass
 
@@ -285,56 +296,112 @@ class MVEAutomationClient:
         )
 
     def _dismiss_daily_closing_popup(self, popup: Any) -> bool:
-        popup = self._top_level_window(popup)
         popup_handle = self._window_handle(popup)
-        self._bring_window_to_front(popup)
+        popup_target = self._top_level_window(popup)
+        self._bring_window_to_front(popup_target)
 
-        for control in self._find_popup_no_controls(popup):
+        for control in self._find_popup_no_controls(popup_target):
             try:
                 self._invoke_control(control)
-                if self._wait_for_popup_to_close(popup_handle):
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
                     return True
             except Exception:
                 pass
             try:
                 control.wrapper_object().click_input()
-                if self._wait_for_popup_to_close(popup_handle):
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
                     return True
             except Exception:
                 continue
 
         for button_title in ("No", "&No", "NO"):
             try:
-                self._click_button(popup, button_title)
-                if self._wait_for_popup_to_close(popup_handle):
+                self._click_button(popup_target, button_title)
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
                     return True
             except Exception:
                 continue
 
         for key_sequence in ("%n", "n", "{ENTER}", " "):
             try:
-                popup.wrapper_object().set_focus()
-                popup.wrapper_object().type_keys(key_sequence, set_foreground=True)
+                popup_target.wrapper_object().set_focus()
+                popup_target.wrapper_object().type_keys(key_sequence, set_foreground=True)
                 time.sleep(0.3)
-                if self._wait_for_popup_to_close(popup_handle):
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
                     return True
             except Exception:
                 continue
 
         try:
             self._keyboard("%n")
-            return self._wait_for_popup_to_close(popup_handle)
+            return self._wait_for_daily_closing_to_disappear(popup_handle)
         except Exception:
             return False
 
-    def _wait_for_popup_to_close(self, popup_handle: int | None, timeout: float = 2) -> bool:
+    def _dismiss_daily_closing_popup_win32(self) -> bool:
+        popup = self._find_daily_closing_popup_win32()
+        if popup is None:
+            return False
+
+        popup_handle = self._window_handle(popup)
+        try:
+            popup.wrapper_object().set_focus()
+        except Exception:
+            pass
+
+        for control in self._find_popup_no_controls(popup):
+            try:
+                self._invoke_control(control)
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
+                    return True
+            except Exception:
+                pass
+            try:
+                control.wrapper_object().click_input()
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
+                    return True
+            except Exception:
+                continue
+
+        for key_sequence in ("%n", "{ENTER}", " "):
+            try:
+                popup.wrapper_object().type_keys(key_sequence, set_foreground=True)
+                if self._wait_for_daily_closing_to_disappear(popup_handle):
+                    return True
+            except Exception:
+                continue
+
+        return False
+
+    def _find_daily_closing_popup_win32(self) -> Any | None:
+        if self._desktop_win32 is None:
+            return None
+
+        for window in self._desktop_win32.windows():
+            try:
+                if not window.is_visible():
+                    continue
+                texts = [
+                    self._normalize_label_text(text)
+                    for text in self._collect_visible_text(window)
+                    if text.strip()
+                ]
+                title = self._normalize_label_text(window.window_text() or "")
+                if self._looks_like_daily_closing_texts(texts + ([title] if title else [])):
+                    return window
+            except Exception:
+                continue
+        return None
+
+    def _wait_for_daily_closing_to_disappear(
+        self, popup_handle: int | None, timeout: float = 3
+    ) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
-            if popup_handle is None:
-                popup = self._find_daily_closing_popup()
-                if popup is None:
-                    return True
-            elif not self._window_handle_exists(popup_handle):
+            popup = self._find_daily_closing_popup()
+            if popup is None:
+                return True
+            if popup_handle is not None and not self._window_handle_exists(popup_handle):
                 return True
             time.sleep(0.2)
         return False
@@ -369,6 +436,13 @@ class MVEAutomationClient:
             except Exception:
                 continue
         return matches
+
+    def _log_popup_diagnostics(self, popup: Any) -> None:
+        try:
+            texts = [text for text in self._collect_visible_text(popup) if text.strip()]
+            LOGGER.error("Daily Closing popup visible texts: %s", texts[:50])
+        except Exception:
+            LOGGER.error("Daily Closing popup diagnostics unavailable.")
 
     @staticmethod
     def _top_level_window(window: Any) -> Any:
